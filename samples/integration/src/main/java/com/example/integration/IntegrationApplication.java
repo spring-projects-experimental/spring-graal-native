@@ -6,9 +6,10 @@ import java.util.Date;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.channel.interceptor.WireTap;
@@ -17,11 +18,12 @@ import org.springframework.integration.config.EnableMessageHistory;
 import org.springframework.integration.config.GlobalChannelInterceptor;
 import org.springframework.integration.config.IntegrationConverter;
 import org.springframework.integration.dsl.IntegrationFlow;
+import org.springframework.integration.dsl.IntegrationFlowDefinition;
 import org.springframework.integration.dsl.IntegrationFlows;
-import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.handler.advice.RequestHandlerRetryAdvice;
 import org.springframework.integration.http.config.EnableIntegrationGraphController;
+import org.springframework.integration.webflux.dsl.WebFlux;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -35,15 +37,32 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 public class IntegrationApplication {
 
 	public static void main(String[] args) throws InterruptedException {
-		ConfigurableApplicationContext applicationContext = SpringApplication.run(IntegrationApplication.class, args);
-		applicationContext.getBean("dateSourceEndpoint", SourcePollingChannelAdapter.class).start();
+		ApplicationContext context = SpringApplication.run(IntegrationApplication.class, args);
+
+		WebClient webClient =
+				context.getBean(WebClient.Builder.class)
+						.baseUrl("http://localhost:8080")
+						.build();
 
 		Thread.sleep(1000);
 
+		System.out.println("Starting 'dateSourceEndpoint'...");
+
+		webClient
+				.get()
+				.uri("control-bus/dateSourceEndpoint")
+				.retrieve()
+				.toBodilessEntity()
+				.block(Duration.ofSeconds(10));
+
+		Thread.sleep(1000);
+
+		System.out.println("Obtaining integration graph...");
+
 		String integrationGraph =
-				WebClient.create()
+				webClient
 						.get()
-						.uri("http://localhost:8080/integration-graph")
+						.uri("integration-graph")
 						.accept(MediaType.APPLICATION_JSON)
 						.retrieve()
 						.bodyToMono(String.class)
@@ -97,6 +116,21 @@ public class IntegrationApplication {
 			}
 
 		};
+	}
+
+	@Bean
+	public IntegrationFlow controlBus() {
+		return IntegrationFlowDefinition::controlBus;
+	}
+
+	@Bean
+	public IntegrationFlow controlBusControllerFlow(ControlBusGateway controlBusGateway) {
+		return IntegrationFlows
+				.from(WebFlux.inboundChannelAdapter("/control-bus/{endpointId}")
+						.payloadExpression("#pathVariables.endpointId")
+						.requestMapping(mapping -> mapping.methods(HttpMethod.GET)))
+				.handle(controlBusGateway, "startEndpoint")
+				.get();
 	}
 
 }

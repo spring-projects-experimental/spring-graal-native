@@ -16,6 +16,9 @@
 
 package org.springframework.integration;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.integration.jdbc.store.JdbcMessageStore;
 import org.springframework.nativex.hint.AccessBits;
 import org.springframework.nativex.hint.InitializationHint;
@@ -24,18 +27,14 @@ import org.springframework.nativex.hint.NativeHint;
 import org.springframework.nativex.hint.JdkProxyHint;
 import org.springframework.nativex.hint.ResourceHint;
 import org.springframework.nativex.hint.TypeHint;
+import org.springframework.nativex.type.AccessDescriptor;
+import org.springframework.nativex.type.HintDeclaration;
 import org.springframework.nativex.type.NativeConfiguration;
-
+import org.springframework.nativex.type.TypeProcessor;
+import org.springframework.nativex.type.TypeSystem;
 
 @NativeHint(trigger = JdbcMessageStore.class,
-		resources = @ResourceHint(patterns = {
-				"org/springframework/integration/jdbc/schema-h2.sql",
-				"org/springframework/integration/jdbc/schema-mysql.sql",
-				"org/springframework/integration/jdbc/schema-oracle.sql",
-				"org/springframework/integration/jdbc/schema-postgresql.sql",
-				"org/springframework/integration/jdbc/schema-hsqldb.sql",
-				"org/springframework/integration/jdbc/schema-sqlserver.sql",
-				"org/springframework/integration/jdbc/schema-sybase.sql"}))
+		resources = @ResourceHint(patterns = "org/springframework/integration/jdbc/schema-.*.sql"))
 @NativeHint(trigger = org.springframework.integration.config.EnableIntegration.class,
 		initialization =
 		@InitializationHint(initTime = InitializationTime.BUILD,
@@ -50,6 +49,7 @@ import org.springframework.nativex.type.NativeConfiguration;
 		types = {
 				@TypeHint(access = AccessBits.FULL_REFLECTION,
 						types = {
+								org.springframework.integration.dsl.IntegrationFlow.class,
 								org.springframework.integration.gateway.RequestReplyExchanger.class,
 								org.springframework.integration.graph.Graph.class,
 								org.springframework.integration.graph.CompositeMessageHandlerNode.class,
@@ -79,7 +79,10 @@ import org.springframework.nativex.type.NativeConfiguration;
 						types = {
 								org.springframework.integration.xml.xpath.XPathUtils.class,
 								org.springframework.integration.json.JsonPathUtils.class,
-								com.jayway.jsonpath.JsonPath.class
+								com.jayway.jsonpath.JsonPath.class,
+								org.springframework.integration.gateway.MethodArgsHolder.class,
+								org.springframework.integration.routingslip.ExpressionEvaluatingRoutingSlipRouteStrategy.RequestAndReply.class,
+								org.springframework.integration.core.Pausable.class
 						})
 		},
 		jdkProxies = {
@@ -93,6 +96,14 @@ import org.springframework.nativex.type.NativeConfiguration;
 				@JdkProxyHint(
 						types = {
 								org.springframework.integration.handler.AbstractReplyProducingMessageHandler.RequestHandler.class,
+								org.springframework.aop.SpringProxy.class,
+								org.springframework.aop.framework.Advised.class,
+								org.springframework.core.DecoratingProxy.class
+						}),
+				@JdkProxyHint(
+						types = {
+								org.springframework.integration.dsl.IntegrationFlow.class,
+								org.springframework.context.SmartLifecycle.class,
 								org.springframework.aop.SpringProxy.class,
 								org.springframework.aop.framework.Advised.class,
 								org.springframework.core.DecoratingProxy.class
@@ -126,10 +137,82 @@ import org.springframework.nativex.type.NativeConfiguration;
 		@TypeHint(types = javax.xml.bind.Binder.class,
 				typeNames = "com.rometools.rome.feed.atom.Feed",
 				access = AccessBits.CLASS))
+@NativeHint(trigger = org.springframework.integration.http.inbound.IntegrationRequestMappingHandlerMapping.class,
+		types =
+		@TypeHint(
+				types = org.springframework.web.HttpRequestHandler.class,
+				access = AccessBits.CLASS | AccessBits.PUBLIC_METHODS))
+@NativeHint(trigger = org.springframework.integration.webflux.inbound.WebFluxIntegrationRequestMappingHandlerMapping.class,
+		types =
+		@TypeHint(
+				types = org.springframework.web.server.WebHandler.class,
+				access = AccessBits.CLASS | AccessBits.PUBLIC_METHODS))
 @NativeHint(trigger = com.fasterxml.jackson.databind.ObjectMapper.class,
 		initialization =
 		@InitializationHint(initTime = InitializationTime.BUILD,
 				types = org.springframework.integration.support.json.Jackson2JsonObjectMapper.class))
 public class IntegrationHints implements NativeConfiguration {
+
+	private static final String MESSAGING_GATEWAY_ANNOTATION =
+			"Lorg/springframework/integration/annotation/MessagingGateway;";
+
+	private static final String ABSTRACT_ENDPOINT_TYPE = "Lorg/springframework/integration/endpoint/AbstractEndpoint;";
+
+	private static final String MESSAGE_TYPE = "org/springframework/messaging/Message";
+
+	@Override
+	public List<HintDeclaration> computeHints(TypeSystem typeSystem) {
+		List<HintDeclaration> hints = new ArrayList<>();
+		hints.addAll(computeMessagingGatewayHints(typeSystem));
+		hints.addAll(computeAbstractEndpointHints(typeSystem));
+//		hints.addAll(computeMessageHints(typeSystem));
+		return hints;
+	}
+
+	private static List<HintDeclaration> computeMessagingGatewayHints(TypeSystem typeSystem) {
+		return TypeProcessor.namedProcessor("IntegrationHints - MessagingGateway")
+				.skipMethodInspection()
+				.skipFieldInspection()
+				.skipConstructorInspection()
+				.filter(type ->
+						type.hasAnnotationInHierarchy(MESSAGING_GATEWAY_ANNOTATION) &&
+								type.isInterface() &&
+								!type.isAnnotation())
+				.limitInspectionDepth(0)
+				.onTypeDiscovered((type, context) -> {
+					context.addProxy(type.getDottedName(), "org.springframework.aop.SpringProxy",
+							"org.springframework.aop.framework.Advised", "org.springframework.core.DecoratingProxy");
+				})
+				.use(typeSystem)
+				.processTypes();
+	}
+
+	private static List<HintDeclaration> computeAbstractEndpointHints(TypeSystem typeSystem) {
+		return TypeProcessor.namedProcessor("IntegrationHints - AbstractEndpoint")
+				.skipAnnotationInspection()
+				.skipMethodInspection()
+				.skipFieldInspection()
+				.skipConstructorInspection()
+				.filter(type -> type.extendsClass(ABSTRACT_ENDPOINT_TYPE))
+				.onTypeDiscovered((type, context) ->
+					context.addReflectiveAccess(type,
+							new AccessDescriptor(AccessBits.CLASS | AccessBits.PUBLIC_METHODS)))
+				.use(typeSystem)
+				.processTypes();
+	}
+
+/*	private static List<HintDeclaration> computeMessageHints(TypeSystem typeSystem) {
+		return TypeProcessor.namedProcessor("IntegrationHints - Message")
+				.skipAnnotationInspection()
+				.skipMethodInspection()
+				.skipFieldInspection()
+				.skipConstructorInspection()
+				.filter(type -> type.implementsInterface(MESSAGE_TYPE))
+				.onTypeDiscovered((type, context) ->
+						context.addReflectiveAccess(type,
+								new AccessDescriptor(AccessBits.CLASS | AccessBits.PUBLIC_METHODS)))
+				.use(typeSystem)
+				.processTypes();
+	}*/
 
 }
