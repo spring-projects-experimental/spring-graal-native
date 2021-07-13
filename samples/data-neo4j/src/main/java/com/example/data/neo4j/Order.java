@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2018 the original author or authors.
+ * Copyright 2013-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,15 @@
  */
 package com.example.data.neo4j;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.PersistenceConstructor;
 import org.springframework.data.neo4j.core.schema.GeneratedValue;
 import org.springframework.data.neo4j.core.schema.Id;
@@ -41,6 +46,14 @@ public class Order {
 	@Relationship(value = "HAS")
 	private List<LineItem> items;
 
+	@CreatedDate
+	Instant createdAt;
+	@CreatedBy
+	String createdBy;
+	@LastModifiedDate
+	Instant modifiedAt;
+	@LastModifiedBy
+	String modifiedBy;
 	protected Order() {
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,23 @@ package com.example.data.neo4j;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.neo4j.config.EnableNeo4jAuditing;
+
+import java.util.Optional;
 
 @SpringBootApplication
+@EnableNeo4jAuditing(auditorAwareRef = "fixedAuditor")
 public class Neo4jApplication {
 
 	public static void main(String[] args) throws Exception {
 		SpringApplication.run(Neo4jApplication.class, args);
 		Thread.currentThread().join(); // To be able to measure memory consumption
+	}
+
+	@Bean
+	AuditorAware<String> fixedAuditor() {
+		return () -> Optional.of("Douglas Adams");
 	}
 }

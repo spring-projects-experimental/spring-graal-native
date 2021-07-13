@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,12 @@ package com.example.data.elasticsearch;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.elasticsearch.config.EnableElasticsearchAuditing;
 
 @SpringBootApplication
+@EnableElasticsearchAuditing(auditorAwareRef = "fixedAuditor")
 public class ElasticsearchApplication {
 
 	public static void main(String[] args) throws Exception {
@@ -28,5 +32,10 @@ public class ElasticsearchApplication {
 		app.setWebApplicationType(WebApplicationType.NONE);
 		app.run();
 		Thread.currentThread().join(); // To be able to measure memory consumption
+	}
+
+	@Bean
+	AuditorAware<String> fixedAuditor() {
+		return () -> java.util.Optional.of("Douglas Adams");
 	}
 }
